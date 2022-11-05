@@ -26,10 +26,11 @@ impl Server {
         let socket = UdpSocket::bind(addr).expect("Error creating socket");
 
         let mut buf = [0; 16];
-
         loop {
             if let Ok((amt, src)) = socket.recv_from(&mut buf) {
-                assert_eq!(amt, 16);
+                if amt != 16 {
+                    continue; // error pkt, send nothing back
+                }
                 let curr_ts = utils::get_timestamp();
                 let time_diff = {
                     let recv_ts = utils::parse_ts(buf);

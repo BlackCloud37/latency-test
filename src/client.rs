@@ -46,7 +46,8 @@ impl Client {
 
     fn run_udp(&mut self) {
         let socket = UdpSocket::bind("0.0.0.0:0").expect("Creating udp socket");
-     
+        socket.set_nonblocking(true).expect("set nonblocking");
+
         let mut buf = [0; 16];
         for i in 0..self.count {
             let mut ok = false;
@@ -55,16 +56,24 @@ impl Client {
                 {
                     // send
                     utils::format_ts(&mut buf, utils::get_timestamp());
-                    if socket.send_to(&buf, self.server_addr).is_err() {
+                    if let Ok(amt) = socket.send_to(&buf, self.server_addr) {
+                        if amt != 16 {
+                            ok = false;
+                        }
+                    } else {
                         ok = false;
-                    };
+                    }
                 }
                 if ok {
                     self.latencies[i] = {
                         if let Ok((amt, _)) = socket.recv_from(&mut buf) {
-                            assert_eq!(amt, 16);
-                            let recv_ts = utils::parse_ts(buf);
-                            (get_timestamp() - recv_ts) / 2
+                            if amt != 16 {
+                                ok = false;
+                                0
+                            } else {
+                                let recv_ts = utils::parse_ts(buf);
+                                (get_timestamp() - recv_ts) / 2
+                            }
                         } else {
                             ok = false;
                             0
