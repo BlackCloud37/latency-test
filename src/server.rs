@@ -1,4 +1,7 @@
-use std::{net::{TcpListener, TcpStream, UdpSocket}, io::{Read, Write}};
+use std::{
+    io::{Read, Write},
+    net::{TcpListener, TcpStream, UdpSocket},
+};
 
 use crate::utils;
 
@@ -45,12 +48,12 @@ impl Server {
     fn run_tcp(&self) -> ! {
         let addr = format!("0.0.0.0:{}", self.port);
         let listener = TcpListener::bind(addr).expect("Error listening");
-        
+
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
-                    self.handle_tcp_conn(stream);                    
-                },
+                    self.handle_tcp_conn(stream);
+                }
                 Err(e) => {
                     println!("Error listening {}", e)
                 }
@@ -61,7 +64,7 @@ impl Server {
 
     fn handle_tcp_conn(&self, mut stream: TcpStream) {
         stream.set_nodelay(true).unwrap();
-        
+
         let mut timestamp_buffer = [0; 16];
         while let Ok(()) = stream.read_exact(&mut timestamp_buffer) {
             let curr_ts = utils::get_timestamp();
@@ -69,7 +72,7 @@ impl Server {
                 let recv_ts = utils::parse_ts(timestamp_buffer);
                 curr_ts - recv_ts
             };
-            
+
             utils::format_ts(&mut timestamp_buffer, curr_ts - time_diff);
             if let Err(_) = stream.write_all(&timestamp_buffer) {
                 break;

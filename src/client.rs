@@ -1,6 +1,9 @@
-use std::{net::{SocketAddrV4, TcpStream, UdpSocket}, io::{Write, Read}};
+use std::{
+    io::{Read, Write},
+    net::{SocketAddrV4, TcpStream, UdpSocket},
+};
 
-use crate::utils::{self, get_timestamp, average};
+use crate::utils::{self, average, get_timestamp};
 
 pub struct Client {
     server_addr: SocketAddrV4,
@@ -11,7 +14,12 @@ pub struct Client {
 
 impl Client {
     pub fn new(ip: String, port: usize, is_udp: bool, count: usize) -> Self {
-        Self { server_addr: SocketAddrV4::new(ip.parse().unwrap(), port as u16), is_udp, latencies: vec![0; count], count }
+        Self {
+            server_addr: SocketAddrV4::new(ip.parse().unwrap(), port as u16),
+            is_udp,
+            latencies: vec![0; count],
+            count,
+        }
     }
 
     pub fn run(&mut self) {
@@ -24,7 +32,7 @@ impl Client {
 
     fn run_tcp(&mut self) {
         let mut stream = TcpStream::connect(self.server_addr).expect("Conn failed");
- 
+
         let mut timestamp_buffer = [0; 16];
         for i in 0..self.count {
             {
@@ -32,10 +40,12 @@ impl Client {
                 utils::format_ts(&mut timestamp_buffer, utils::get_timestamp());
                 stream.write_all(&timestamp_buffer).expect("Conn broke");
             }
-            
+
             self.latencies[i] = {
                 // recv
-                stream.read_exact(&mut timestamp_buffer).expect("Conn broke");
+                stream
+                    .read_exact(&mut timestamp_buffer)
+                    .expect("Conn broke");
                 let recv_ts = utils::parse_ts(timestamp_buffer);
 
                 (get_timestamp() - recv_ts) / 2
@@ -46,46 +56,44 @@ impl Client {
 
     fn run_udp(&mut self) {
         let socket = UdpSocket::bind("0.0.0.0:0").expect("Creating udp socket");
-        socket.set_nonblocking(true).expect("set nonblocking");
 
         let mut buf = [0; 16];
         for i in 0..self.count {
             let mut ok = false;
             while !ok {
-                ok = true;
-                {
+                ok = {
                     // send
                     utils::format_ts(&mut buf, utils::get_timestamp());
-                    if let Ok(amt) = socket.send_to(&buf, self.server_addr) {
-                        if amt != 16 {
-                            ok = false;
-                        }
-                    } else {
-                        ok = false;
-                    }
+                    16 == socket.send_to(&buf, self.server_addr).unwrap_or(0)
+                };
+                if !ok {
+                    continue;
                 }
-                if ok {
-                    self.latencies[i] = {
-                        if let Ok((amt, _)) = socket.recv_from(&mut buf) {
-                            if amt != 16 {
-                                ok = false;
-                                0
-                            } else {
+                ok = {
+                    // recv
+                    socket
+                        .recv_from(&mut buf)
+                        .map(|(amt, src)| {
+                            assert_eq!(src, std::net::SocketAddr::V4(self.server_addr));
+                            if amt == 16 {
                                 let recv_ts = utils::parse_ts(buf);
-                                (get_timestamp() - recv_ts) / 2
+                                self.latencies[i] = (get_timestamp() - recv_ts) / 2;
+                                true
+                            } else {
+                                false
                             }
-                        } else {
-                            ok = false;
-                            0
-                        } 
-                    }
-                }
+                        })
+                        .unwrap_or(false)
+                };
             }
         }
         self.print_result();
     }
 
     fn print_result(&self) {
-        println!("Test finished with avg rtt of {} us", average(&self.latencies));
+        println!(
+            "Test finished with avg rtt of {} us",
+            average(&self.latencies)
+        );
     }
 }
