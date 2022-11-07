@@ -1,3 +1,5 @@
+use std::net::SocketAddrV4;
+
 use clap::{arg, value_parser, Command};
 
 fn cli() -> Command {
@@ -9,11 +11,15 @@ fn cli() -> Command {
             Command::new("server")
                 .about("Start a test server")
                 .arg(
-                    arg!(-p --port <PORT> "server port")
+                    arg!(-t --tport <TPORT> "tcp port")
                         .value_parser(value_parser!(usize))
                         .default_value("65432"),
                 )
-                .arg(arg!(-u --udp "if this arg is set, use udp, else tcp")),
+                .arg(
+                    arg!(-u --uport <UPORT> "udp port")
+                        .value_parser(value_parser!(usize))
+                        .default_value("65433"),
+                ),
         )
         .subcommand(
             Command::new("client")
@@ -21,7 +27,7 @@ fn cli() -> Command {
                 .arg(
                     arg!(-p --port <PORT> "server port")
                         .value_parser(value_parser!(usize))
-                        .default_value("65432"),
+                        .default_value("0"),
                 )
                 .arg(arg!(-u --udp "if this arg is set, use udp, else tcp"))
                 .arg(
@@ -29,6 +35,22 @@ fn cli() -> Command {
                         .value_parser(value_parser!(usize))
                         .default_value("100"),
                 )
+                .arg(
+                    arg!(-d --dup <DUP> "dup packet count")
+                        .value_parser(value_parser!(usize))
+                        .default_value("1"),
+                )
+                .arg(
+                    arg!(-s --size <SIZE> "size of payload in bytes, max is 1024(B)")
+                        .value_parser(value_parser!(usize))
+                        .default_value("256"),
+                )
+                .arg(
+                    arg!(-i --interval <INTERVAL> "interval between each packet in ms")
+                        .value_parser(value_parser!(usize))
+                        .default_value("0"),
+                )
+                .arg(arg!(-q --quiet "if this flag is set, only print final result"))
                 .arg(arg!(<SERVER_IP> "server's ip")),
         )
 }
@@ -36,20 +58,17 @@ mod client;
 mod server;
 mod utils;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let matches = cli().get_matches();
 
     match matches.subcommand() {
         Some(("server", sub_matches)) => {
-            let port = *sub_matches.get_one::<usize>("port").unwrap();
-            let is_udp = *sub_matches.get_one::<bool>("udp").unwrap();
-            println!(
-                "Start server at {} with mode {}",
-                port,
-                if is_udp { "UDP" } else { "TCP" }
-            );
-            let server = server::Server::new(port, is_udp);
-            server.run();
+            let tport = *sub_matches.get_one::<usize>("tport").unwrap();
+            let uport = *sub_matches.get_one::<usize>("uport").unwrap();
+            println!("Start server at {}(TCP) {}(UDP)", tport, uport);
+            let server = server::Server { tport, uport };
+            server.run().await;
         }
         Some(("client", sub_matches)) => {
             let port = *sub_matches.get_one::<usize>("port").unwrap();
@@ -57,14 +76,38 @@ fn main() {
                 .get_one::<String>("SERVER_IP")
                 .expect("required");
             let is_udp = *sub_matches.get_one::<bool>("udp").unwrap();
+            let quiet = *sub_matches.get_one::<bool>("quiet").unwrap();
             let count = *sub_matches.get_one::<usize>("count").unwrap();
-            println!(
-                "Start client to {}:{} with mode {}",
-                server_ip,
-                port,
-                if is_udp { "UDP" } else { "TCP" }
-            );
-            let mut client = client::Client::new(server_ip.into(), port, is_udp, count);
+            let dup = *sub_matches.get_one::<usize>("dup").unwrap();
+            let size = *sub_matches.get_one::<usize>("size").unwrap();
+            let interval = *sub_matches.get_one::<usize>("interval").unwrap();
+            if dup > 1 && !is_udp {
+                println!("[WARNING] dup is ignored in TCP mode");
+            }
+            assert!(count >= 1);
+            assert!(size >= 1 && size <= 1024);
+            let server_port = if port == 0 {
+                if is_udp {
+                    65433
+                } else {
+                    65432
+                }
+            } else {
+                port
+            };
+            let mut client = client::Client {
+                count,
+                dup,
+                is_udp,
+                size,
+                interval,
+                quiet,
+                server_addr: SocketAddrV4::new(server_ip.parse().unwrap(), server_port as u16),
+            };
+            if !quiet {
+                println!("Start client {:?}", client);
+            }
+
             client.run();
         }
         _ => unreachable!(),
