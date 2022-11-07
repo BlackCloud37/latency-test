@@ -65,6 +65,7 @@ impl Client {
             .expect("set read timeout");
 
         let mut buf = vec![0; self.size];
+        let interval = Duration::from_millis(self.interval as u64);
         for i in 0..self.count {
             random_buffer(&mut buf);
 
@@ -88,6 +89,9 @@ impl Client {
                         },
                     }
                 }
+            }
+            if self.interval > 0 {
+                std::thread::sleep(interval);
             }
             if !self.quiet {
                 println!("[UDP] pkt {} received with rtt {}us", i, latencies[i]);
