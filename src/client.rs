@@ -47,7 +47,7 @@ impl Client {
                 std::thread::sleep(interval);
             }
             if !self.quiet {
-                println!("[TCP] pkt {} received with rtt {}us", i, latencies[i]);
+                println!("[TCP] pkt {} received with latency {}us", i, latencies[i]);
             }
         }
         Self::print_result(&latencies);
@@ -94,7 +94,7 @@ impl Client {
                 std::thread::sleep(interval);
             }
             if !self.quiet {
-                println!("[UDP] pkt {} received with rtt {}us", i, latencies[i]);
+                println!("[UDP] pkt {} received with latency {}us", i, latencies[i]);
             }
         }
         Self::print_result(&latencies);
@@ -102,7 +102,7 @@ impl Client {
 
     fn print_result(latencies: &[u128]) {
         println!(
-            "Result RTT/2 in microsecs: AVG({}) MIN({}) MAX({})",
+            "Result latency(RTT/2) in microsecs: AVG({}) MIN({}) MAX({})",
             average(&latencies),
             latencies.iter().min().unwrap(),
             latencies.iter().max().unwrap(),
