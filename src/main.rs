@@ -86,6 +86,7 @@ async fn main() {
             }
             assert!(count >= 1);
             assert!(size >= 1 && size <= 1024);
+
             let server_port = if port == 0 {
                 if is_udp {
                     65433
@@ -95,6 +96,7 @@ async fn main() {
             } else {
                 port
             };
+
             let mut client = client::Client {
                 count,
                 dup,

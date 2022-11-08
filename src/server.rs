@@ -11,11 +11,12 @@ pub struct Server {
 impl Server {
     pub async fn run(self) {
         let uaddr = format!("0.0.0.0:{}", self.uport);
-        let u = tokio::spawn(async move {
+        let udp_task = tokio::spawn(async move {
             let socket = UdpSocket::bind(&uaddr)
                 .await
                 .expect("error creating udp socket");
             println!("[UDP] listen on {}", uaddr);
+            
             let mut buf = vec![0; 1024];
             let mut to_send = None;
             loop {
@@ -26,13 +27,12 @@ impl Server {
                 to_send = socket
                     .recv_from(&mut buf)
                     .await
-                    .map(|v| Some(v))
-                    .unwrap_or(None);
+                    .ok();
             }
         });
 
         let taddr = format!("0.0.0.0:{}", self.tport);
-        let t = tokio::spawn(async move {
+        let tcp_task = tokio::spawn(async move {
             let listener = TcpListener::bind(&taddr)
                 .await
                 .expect("error creating tcp listener");
@@ -58,7 +58,7 @@ impl Server {
                 }
             }
         });
-        let _ = tokio::join!(u, t); // block forever
+        let _ = tokio::join!(udp_task, tcp_task); // block forever
         unreachable!()
     }
 }
