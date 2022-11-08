@@ -102,7 +102,7 @@ impl Client {
 
     fn print_result(latencies: &[u128]) {
         println!(
-            "Result RTT in microsecs: AVG({}) MIN({}) MAX({})",
+            "Result RTT/2 in microsecs: AVG({}) MIN({}) MAX({})",
             average(&latencies),
             latencies.iter().min().unwrap(),
             latencies.iter().max().unwrap(),
