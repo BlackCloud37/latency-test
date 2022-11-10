@@ -17,6 +17,9 @@ fn cli() -> Command {
                     arg!(-u --uport <UPORT> "udp port")
                         .value_parser(value_parser!(usize))
                         .default_value("65433"),
+                )
+                .arg(
+                    arg!(--interface <INTERFACE> "interface to use")
                 ),
         )
         .subcommand(
@@ -67,8 +70,9 @@ async fn main() {
         Some(("server", sub_matches)) => {
             let tport = *sub_matches.get_one::<usize>("tport").unwrap();
             let uport = *sub_matches.get_one::<usize>("uport").unwrap();
+            let interface = sub_matches.get_one::<String>("interface").map(|iface| iface.to_string());
             println!("Start server at {}(TCP) {}(UDP)", tport, uport);
-            let server = server::Server { tport, uport };
+            let server = server::Server { tport, uport, interface };
             server.run().await;
         }
         Some(("client", sub_matches)) => {
