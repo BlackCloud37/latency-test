@@ -1,5 +1,3 @@
-use std::net::SocketAddrV4;
-
 use clap::{arg, value_parser, Command};
 
 fn cli() -> Command {
@@ -50,6 +48,9 @@ fn cli() -> Command {
                         .value_parser(value_parser!(usize))
                         .default_value("0"),
                 )
+                .arg(
+                    arg!(--interface <INTERFACE> "interface to use")
+                )
                 .arg(arg!(-q --quiet "if this flag is set, only print final result"))
                 .arg(arg!(<SERVER_IP> "server's ip")),
         )
@@ -81,6 +82,7 @@ async fn main() {
             let dup = *sub_matches.get_one::<usize>("dup").unwrap();
             let size = *sub_matches.get_one::<usize>("size").unwrap();
             let interval = *sub_matches.get_one::<usize>("interval").unwrap();
+            let interface = sub_matches.get_one::<String>("interface").map(|iface| iface.to_string());
             if dup > 1 && !is_udp {
                 println!("[WARNING] dup is ignored in TCP mode");
             }
@@ -104,13 +106,14 @@ async fn main() {
                 size,
                 interval,
                 quiet,
-                server_addr: SocketAddrV4::new(server_ip.parse().unwrap(), server_port as u16),
+                interface,
+                server_addr: format!("{}:{}", server_ip, server_port).parse().unwrap(),
             };
             if !quiet {
                 println!("Start client {:?}", client);
             }
 
-            client.run();
+            client.run().await;
         }
         _ => unreachable!(),
     }
