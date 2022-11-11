@@ -1,3 +1,5 @@
+use std::{fs::File, net::SocketAddr};
+
 use clap::{arg, value_parser, Command};
 
 fn cli() -> Command {
@@ -37,11 +39,6 @@ fn cli() -> Command {
                         .default_value("100"),
                 )
                 .arg(
-                    arg!(-d --dup <DUP> "dup packet count")
-                        .value_parser(value_parser!(usize))
-                        .default_value("1"),
-                )
-                .arg(
                     arg!(-s --size <SIZE> "size of payload in bytes, max is 1024(B)")
                         .value_parser(value_parser!(usize))
                         .default_value("256"),
@@ -52,10 +49,11 @@ fn cli() -> Command {
                         .default_value("0"),
                 )
                 .arg(
-                    arg!(--interface <INTERFACE> "interface to use")
+                    arg!(--interface <INTERFACE> "interface to use, will be override by config")
                 )
-                .arg(arg!(-q --quiet "if this flag is set, only print final result"))
-                .arg(arg!(<SERVER_IP> "server's ip")),
+                .arg(
+                    arg!(-C --connections <CONNECTIONS> "config file for multi connections")                )
+                .arg(arg!(-d --dest <SERVER_IP> "server's ip")),
         )
 }
 mod client;
@@ -77,19 +75,12 @@ async fn main() {
         }
         Some(("client", sub_matches)) => {
             let port = *sub_matches.get_one::<usize>("port").unwrap();
-            let server_ip = sub_matches
-                .get_one::<String>("SERVER_IP")
-                .expect("required");
+            let server_ip = sub_matches.get_one::<String>("dest");
             let is_udp = *sub_matches.get_one::<bool>("udp").unwrap();
-            let quiet = *sub_matches.get_one::<bool>("quiet").unwrap();
             let count = *sub_matches.get_one::<usize>("count").unwrap();
-            let dup = *sub_matches.get_one::<usize>("dup").unwrap();
             let size = *sub_matches.get_one::<usize>("size").unwrap();
             let interval = *sub_matches.get_one::<usize>("interval").unwrap();
             let interface = sub_matches.get_one::<String>("interface").map(|iface| iface.to_string());
-            if dup > 1 && !is_udp {
-                println!("[WARNING] dup is ignored in TCP mode");
-            }
             assert!(count >= 1);
             assert!(size >= 1 && size <= 1024);
 
@@ -102,21 +93,37 @@ async fn main() {
             } else {
                 port
             };
+            let conn_config = sub_matches.get_one::<String>("connections").map(|f| f.to_string());
+            let conns = if let Some(conn_config) = conn_config {
+                if interface.is_some() {
+                    println!("[WARN] --interface will be override by --connections");
+                }
+                if server_ip.is_some() {
+                    println!("[WARN] SERVER_IP will be override by --connections");
+                }
+                
+                let conn_config_file = File::open(conn_config).expect("open conn file");
+                let v: serde_json::Value = serde_json::from_reader(conn_config_file).expect("read json file");
+                let mut conns = vec![];
+                for (iface, conf) in v.as_object().expect("parse json") {
+                    for (dst, cnt) in conf.as_object().expect("parse json") {
+                        for i in 0..cnt.as_u64().expect("parse json") {
+                            conns.push((Some(iface.to_owned()), dst.to_owned().parse::<SocketAddr>().unwrap(), i));
+                        }
+                    }
+                }
+                conns
+            } else {
+                vec![(interface, format!("{}:{}", server_ip.expect("required"), server_port).parse().unwrap(), 0)]
+            };
 
             let mut client = client::Client {
                 count,
-                dup,
                 is_udp,
                 size,
                 interval,
-                quiet,
-                interface,
-                server_addr: format!("{}:{}", server_ip, server_port).parse().unwrap(),
+                conns
             };
-            if !quiet {
-                println!("Start client {:?}", client);
-            }
-
             client.run().await;
         }
         _ => unreachable!(),
