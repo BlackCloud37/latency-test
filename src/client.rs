@@ -58,9 +58,9 @@ impl Client {
 
                 // send/recv loop
                 let mut buf = vec![0; size];
+                random_buffer(&mut buf);
                 for i in 0..count {
                     // send
-                    random_buffer(&mut buf);
                     let begin = Instant::now();
                     stream.write_all(&buf).await.expect("conn broken");
 
@@ -109,6 +109,8 @@ impl Client {
 
                 // send/recv loop
                 let mut buf = vec![0; size];
+                random_buffer(&mut buf);
+
                 for i in 0..count {
                     let begin = Instant::now();
                     socket.send(&buf).await.expect("could not send message");
