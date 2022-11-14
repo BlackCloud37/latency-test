@@ -3,7 +3,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpSocket, TcpStream, UdpSocket},
-    sync::Barrier,
+    sync::{Barrier, Semaphore},
     time::{self, Instant},
 };
 
@@ -30,12 +30,14 @@ impl Client {
     async fn run_tcp(&self) {
         let mut handles = Vec::with_capacity(self.conns.len());
         let barrier = Arc::new(Barrier::new(self.conns.len()));
+        let sem = Arc::new(Semaphore::new(1)); // only 1 on-fly packet is allowed
 
         for (iface, dst, id) in self.conns.clone().into_iter() {
             let interval = Duration::from_millis(self.interval as u64);
             let size = self.size;
             let count = self.count;
             let wall = barrier.clone();
+            let sem = sem.clone();
             let iface_str = if let Some(iface) = &iface {
                 iface.to_owned()
             } else {
@@ -60,13 +62,19 @@ impl Client {
                 let mut buf = vec![0; size];
                 random_buffer(&mut buf);
                 for i in 0..count {
-                    // send
-                    let begin = Instant::now();
-                    stream.write_all(&buf).await.expect("conn broken");
+                    let lat = {
+                        // get permission to send/recv one pkt, all other tasks will wait
+                        let _permit = sem.acquire().await.expect("error getting semaphore");
 
-                    // recv
-                    stream.read_exact(&mut buf).await.expect("conn broken");
-                    let lat = begin.elapsed().as_micros() / 2;
+                        // send
+                        let begin = Instant::now();
+                        stream.write_all(&buf).await.expect("conn broken");
+
+                        // recv
+                        stream.read_exact(&mut buf).await.expect("conn broken");
+
+                        begin.elapsed().as_micros() / 2
+                    };
 
                     println!(
                         "[TCP]({},{},{}) pkt {} received with latency {}us",
@@ -84,12 +92,14 @@ impl Client {
     async fn run_udp(&self) {
         let mut handles = Vec::with_capacity(self.conns.len());
         let barrier = Arc::new(Barrier::new(self.conns.len()));
+        let sem = Arc::new(Semaphore::new(1)); // only 1 on-fly packet is allowed
 
         for (iface, dst, id) in self.conns.clone().into_iter() {
             let interval = Duration::from_millis(self.interval as u64);
             let size = self.size;
             let count = self.count;
             let wall = barrier.clone();
+            let sem = sem.clone();
             let iface_str = if let Some(iface) = &iface {
                 iface.to_owned()
             } else {
@@ -112,18 +122,22 @@ impl Client {
                 random_buffer(&mut buf);
 
                 for i in 0..count {
-                    let begin = Instant::now();
-                    socket.send(&buf).await.expect("could not send message");
+                    let lat = {
+                        let _permit = sem.acquire().await.expect("error getting semaphore");
 
-                    let lat = match time::timeout(Duration::from_secs(3), socket.recv(&mut buf)).await {
-                        Ok(res) => {
-                            let amt = res.expect("recv error");
-                            assert_eq!(amt, size);
-                            begin.elapsed().as_micros() / 2
-                        }
-                        Err(_) => {
-                            // timeout 
-                            0
+                        let begin = Instant::now();
+                        socket.send(&buf).await.expect("could not send message");
+
+                        match time::timeout(Duration::from_secs(3), socket.recv(&mut buf)).await {
+                            Ok(res) => {
+                                let amt = res.expect("recv error");
+                                assert_eq!(amt, size);
+                                begin.elapsed().as_micros() / 2
+                            }
+                            Err(_) => {
+                                // timeout
+                                0
+                            }
                         }
                     };
 
@@ -133,10 +147,7 @@ impl Client {
                             iface_str, dst, id, i, lat
                         );
                     } else {
-                        println!(
-                            "[UDP]({},{},{}) pkt {} loss",
-                            iface_str, dst, id, i
-                        );
+                        println!("[UDP]({},{},{}) pkt {} loss", iface_str, dst, id, i);
                     }
                     tokio::time::sleep(interval).await;
                     wall.wait().await;
