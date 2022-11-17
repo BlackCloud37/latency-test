@@ -51,6 +51,8 @@ impl Client {
                     Some(iface) => {
                         let socket = TcpSocket::new_v4().expect("create socket");
                         socket.bind(format!("0.0.0.0:{}", local_port).parse().unwrap()).expect("bind");
+                        socket.set_reuseaddr(true).expect("set reuseaddr");
+                        socket.set_reuseport(true).expect("set reuseport");
                         socket
                             .bind_device(Some(iface.as_bytes()))
                             .expect("bind to interface");
