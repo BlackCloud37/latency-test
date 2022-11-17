@@ -53,7 +53,8 @@ fn cli() -> Command {
                 )
                 .arg(
                     arg!(-C --connections <CONNECTIONS> "config file for multi connections")                )
-                .arg(arg!(-d --dest <SERVER_IP> "server's ip")),
+                .arg(arg!(-d --dest <SERVER_IP> "server's ip"))
+                .arg(arg!(-l --localport <LOCAL_PORT> "local port to use").value_parser(value_parser!(usize)).default_value("0")),
         )
 }
 mod client;
@@ -80,6 +81,7 @@ async fn main() {
             let count = *sub_matches.get_one::<usize>("count").unwrap();
             let size = *sub_matches.get_one::<usize>("size").unwrap();
             let interval = *sub_matches.get_one::<usize>("interval").unwrap();
+            let mut local_port = *sub_matches.get_one::<usize>("localport").unwrap();
             let interface = sub_matches.get_one::<String>("interface").map(|iface| iface.to_string());
             assert!(count >= 1);
             assert!(size >= 1 && size <= 1024);
@@ -99,7 +101,11 @@ async fn main() {
                     println!("[WARN] --interface will be override by --connections");
                 }
                 if server_ip.is_some() {
-                    println!("[WARN] SERVER_IP will be override by --connections");
+                    println!("[WARN] -d <SERVER_IP> will be override by --connections");
+                }
+                if local_port != 0 {
+                    println!("[WARN] -l <LOCAL_PORT> will be ignored by --connections");
+                    local_port = 0;
                 }
                 
                 let conn_config_file = File::open(conn_config).expect("open conn file");
@@ -122,7 +128,8 @@ async fn main() {
                 is_udp,
                 size,
                 interval,
-                conns
+                conns,
+                local_port
             };
             client.run().await;
         }

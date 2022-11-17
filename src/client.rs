@@ -16,6 +16,7 @@ pub struct Client {
     pub size: usize,
     pub interval: usize,
     pub conns: Vec<(Option<String>, SocketAddr, u64)>, // Option(iface), dst, id
+    pub local_port: usize,
 }
 
 impl Client {
@@ -43,11 +44,13 @@ impl Client {
             } else {
                 "default".to_string()
             };
+            let local_port = self.local_port;
             handles.push(tokio::spawn(async move {
                 // connect
                 let mut stream = match iface {
                     Some(iface) => {
                         let socket = TcpSocket::new_v4().expect("create socket");
+                        socket.bind(format!("0.0.0.0:{}", local_port).parse().unwrap()).expect("bind");
                         socket
                             .bind_device(Some(iface.as_bytes()))
                             .expect("bind to interface");
@@ -105,8 +108,9 @@ impl Client {
             } else {
                 "default".to_string()
             };
+            let local_port = self.local_port;
             handles.push(tokio::spawn(async move {
-                let socket = UdpSocket::bind("0.0.0.0:0")
+                let socket = UdpSocket::bind(format!("0.0.0.0:{}", local_port))
                     .await
                     .expect("creating udp socket");
                 if let Some(iface) = iface {
